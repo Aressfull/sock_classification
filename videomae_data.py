@@ -9,6 +9,44 @@ from torch.utils.data import Dataset
 
 from utils import synchronize_touch_and_touch
 
+class CarpetDataset(Dataset):
+
+    def __init__(self,phase):
+        self.phase = phase
+
+        data = torch.load("./carpet_data.pt")
+        label = np.random.randn(data.shape[0],data.shape[1],data.shape[2],data.shape[3])
+
+        """
+        data = np.array(data)
+        label = np.array(label)
+        
+        min_ = 89.0
+        max_ = 1011.0
+        mean_ = 536.4649528748312
+        std_ = 46.81434484100088
+
+        # data = ((data - min_) / (max_ - min_) - 0.5) * 2.
+        data = (data - mean_) / std_
+        #print(data)
+        #print(data.shape)
+        """
+        self.data = data
+        self.label = torch.LongTensor(label)
+        print(phase, 'data:', data.shape, 'label:', label.shape)
+
+    def __len__(self):
+        return self.data.size(0)
+
+    def __getitem__(self, idx):
+        data = self.data[idx]
+        # augment the training set
+        if self.phase == 'train':
+            noise = (np.random.randn(data.shape[0], data.shape[1], data.shape[2], data.shape[3]) - 0.5) * 0.5
+            data = data + torch.FloatTensor(noise)
+
+        return data, self.label[idx]
+
 
 class ActionDataset(Dataset):
 
@@ -106,6 +144,8 @@ class ActionDataset(Dataset):
 
         # data = ((data - min_) / (max_ - min_) - 0.5) * 2.
         data = (data - mean_) / std_
+        #print(data)
+        #print(data.shape)
 
         self.data = torch.FloatTensor(data)
         self.label = torch.LongTensor(label)
