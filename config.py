@@ -16,6 +16,7 @@ parser.add_argument('--skip', type=int, default=2)
 parser.add_argument('--subsample', type=int, default=1)
 
 parser.add_argument('-epoch','--n_epoch', type=int, default=60)
+parser.add_argument('-extra_data','--extra_data', type=bool, default=False)
 parser.add_argument('-lr','--lr', type=float, default=1e-3)
 parser.add_argument('-l2','--weight_decay', type=float, default=1e-4)
 parser.add_argument('-batch','--batch_size', type=int, default=64)
