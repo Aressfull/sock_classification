@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from config import gen_args
 from models import CNNet
-from videomae_data import ActionDataset
+from videomae_data import ActionDataset, CarpetDataset
 from utils import plot_confusion_matrix, accuracy
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc, f1_score
@@ -88,8 +88,11 @@ dataset
 '''
 datasets = {}
 dataloaders = {}
-for phase in ['train', 'valid', 'test']:
-    datasets[phase] = ActionDataset(args, phase=phase)
+for phase in ['carpet', 'train', 'valid', 'test']:
+    if phase != 'carpet':
+        datasets[phase] = ActionDataset(args, phase=phase)
+    else:
+        datasets[phase] = CarpetDataset(phase=phase)
     dataloaders[phase] = DataLoader(
         datasets[phase], batch_size=args.batch_size,
         shuffle=True if phase == 'train' else False,
@@ -103,13 +106,17 @@ if multiple_gpu:
 model = model.to(device)
     
 pretraining = args.pretrain
+extra_data = args.extra_data
 
 if pretraining:
     pretrain_opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     n_itr = args.n_pretrain
     mask_ratio = args.mask_ratio
     for itr in range(0,n_itr):
-        phases = ['train']
+        if extra_data:
+            phases = ['train', 'carpet']
+        else:
+            phases = ['train']
         for phase in phases:
             running_loss = 0.0
             count = 0
