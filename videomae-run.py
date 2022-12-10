@@ -30,7 +30,7 @@ import numpy as np
 import torch
 from torchvision.transforms import Compose, Lambda, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
 
-# os.environ["CUDA_VISIBLE_DEVICES"]="2,3,4,6,7"
+os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
 args = gen_args("VideoMae4layerPretrained_frame_sensor")
 
 print(args)
@@ -61,20 +61,20 @@ config.num_hidden_layers = args.num_hidden_layers
 config.hidden_size = args.hidden_size
 config.num_attention_heads = args.encoder_att_heads
 
-pretrain_path = ('./saved_models/%ddepth-%slr-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-pretrained-videomae-seed10-v2' % 
-                         (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.weight_decay).split('.')[1],
+pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-pretrained-videomae-seed10-v2' % 
+                    (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_pretrain, args.mask_type,args.tubelet_size, args.patch_size,
-                              str(f'{args.mask_ratio:.2f}').split('.')[1]))
+                              str(f'{args.mask_ratio:.2f}').split('.')[1], str(args.extra_data)))
 if args.pretrain:
-    finetune_path = ('./saved_models/%ddepth-%slr-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-videomae-seed10-v2' % 
-                         (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.weight_decay).split('.')[1],
+    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-finetuned-videomae-seed10-v2' % 
+                         (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
-                              str(f'{args.mask_ratio:.2f}').split('.')[1]))
+                              str(f'{args.mask_ratio:.2f}').split('.')[1], str(args.extra_data)))
 else:
-    finetune_path = ('./saved_models/%ddepth-%slr-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed10-v2' % 
-                     (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.weight_decay).split('.')[1],
+    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed10-v2' % 
+                     (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                           args.hidden_size, args.encoder_att_heads,
                           args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
                           str(f'{args.mask_ratio:.2f}').split('.')[1]))
@@ -101,12 +101,12 @@ for phase in ['carpet', 'train', 'valid', 'test']:
 model = VideoMAEForPreTraining(config)
 
 if multiple_gpu:
-    model = nn.DataParallel(model, device_ids=[0,1,2,3])
+    model = nn.DataParallel(model, device_ids=[0,1])
 
 model = model.to(device)
-    
-pretraining = args.pretrain
+
 extra_data = args.extra_data
+pretraining = args.pretrain
 
 if pretraining:
     pretrain_opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -188,13 +188,12 @@ else:
 # model = VideoMAEForVideoClassification.from_pretrained('./finetuned20-videomae',config=config)
 # model.cuda()
 if multiple_gpu:
-    model = nn.DataParallel(model, device_ids=[0,1,2,3])
+    model = nn.DataParallel(model, device_ids=[0,1])
 model = model.to(device)
 
 # if use_gpu:
 #     model = model.to(device)
 
-use_L1 = args.use_L1
 lambda_L1 = args.lambda_L1
 
 criterion = nn.CrossEntropyLoss()
@@ -242,7 +241,7 @@ for epoch in range(args.n_epoch):  # loop over the dataset multiple times
                     loss = criterion(outputs, labels)
                     loss = loss.mean()
             else:
-                if use_L1:
+                if lambda_L1:
                     regularization_loss = 0
                     for param in model.parameters():
                         regularization_loss += torch.sum(torch.abs(param))
