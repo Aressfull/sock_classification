@@ -194,6 +194,9 @@ model = model.to(device)
 # if use_gpu:
 #     model = model.to(device)
 
+use_L1 = args.use_L1
+lambda_L1 = args.lambda_L1
+
 criterion = nn.CrossEntropyLoss()
 # criterion.cuda()
 optimizer = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
@@ -239,9 +242,18 @@ for epoch in range(args.n_epoch):  # loop over the dataset multiple times
                     loss = criterion(outputs, labels)
                     loss = loss.mean()
             else:
-                outputs = model(inputs).logits
-                loss = criterion(outputs, labels)
-                loss = loss.mean()
+                if use_L1:
+                    regularization_loss = 0
+                    for param in model.parameters():
+                        regularization_loss += torch.sum(torch.abs(param))
+
+                    outputs = model(inputs).logits
+                    loss = criterion(outputs, labels)
+                    loss = loss.mean() + lambda_L1 * regularization_loss
+                else:
+                    outputs = model(inputs).logits
+                    loss = criterion(outputs, labels)
+                    loss = loss.mean()
 
             if phase == 'train':
                 optimizer.zero_grad()
