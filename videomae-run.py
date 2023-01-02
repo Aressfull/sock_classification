@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 from config import gen_args
 from models import CNNet
-from videomae_data import ActionDataset, CarpetDataset
+from videomae_data import ActionDataset#, CarpetDataset
 from utils import plot_confusion_matrix, accuracy
 from sklearn.preprocessing import label_binarize
 from sklearn.metrics import roc_curve, auc, f1_score
@@ -30,7 +30,7 @@ import numpy as np
 import torch
 from torchvision.transforms import Compose, Lambda, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
 
-os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
+os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
 args = gen_args("VideoMae4layerPretrained_frame_sensor")
 
 print(args)
@@ -60,26 +60,28 @@ config.num_labels = args.n_obj
 config.num_hidden_layers = args.num_hidden_layers
 config.hidden_size = args.hidden_size
 config.num_attention_heads = args.encoder_att_heads
+config.comparisons = args.comparisons
+config.beta = args.beta
 
-pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-pretrained-videomae-seed10-v2' % 
+pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed10-v7-2card' % 
                     (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_pretrain, args.mask_type,args.tubelet_size, args.patch_size,
-                              str(f'{args.mask_ratio:.2f}').split('.')[1], str(args.extra_data)))
+                              str(args.mask_ratio), str(args.extra_data), args.comparisons,
+                              str(args.beta)))
 if args.pretrain:
-    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-finetuned-videomae-seed10-v2' % 
+    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed10-v7-2card' % 
                          (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
-                              str(f'{args.mask_ratio:.2f}').split('.')[1], str(args.extra_data)))
+                              str(args.mask_ratio), str(args.extra_data),args.comparisons,
+                              str(args.beta)))
 else:
-    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed10-v2' % 
+    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed10-v3' % 
                      (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                           args.hidden_size, args.encoder_att_heads,
                           args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
                           str(f'{args.mask_ratio:.2f}').split('.')[1]))
-# pretrain_path = './6layer90mask005lr200epochtubepretrained-001L2-30temporal-emb-videomae-seed10'
-# finetune_path = './6layer90mask005lr200epochtubefinetuned-001L2-30temporal-emb-videomae-seed10'
 print(pretrain_path)
 print(finetune_path)
     
@@ -88,7 +90,7 @@ dataset
 '''
 datasets = {}
 dataloaders = {}
-for phase in ['carpet', 'train', 'valid', 'test']:
+for phase in ['train', 'valid', 'test']:#,carpet]:
     if phase != 'carpet':
         datasets[phase] = ActionDataset(args, phase=phase)
     else:
@@ -97,18 +99,19 @@ for phase in ['carpet', 'train', 'valid', 'test']:
         datasets[phase], batch_size=args.batch_size,
         shuffle=True if phase == 'train' else False,
         num_workers=args.num_workers)
-    
-model = VideoMAEForPreTraining(config)
-
-if multiple_gpu:
-    model = nn.DataParallel(model, device_ids=[0,1])
-
-model = model.to(device)
 
 extra_data = args.extra_data
 pretraining = args.pretrain
 
-if pretraining:
+
+if pretraining: #and (os.path.exists(pretrain_path)==0):
+    model = VideoMAEForPreTraining(config)
+
+    if multiple_gpu:
+        model = nn.DataParallel(model, device_ids=[0,1])
+
+    model = model.to(device)
+    
     pretrain_opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     n_itr = args.n_pretrain
     mask_ratio = args.mask_ratio
@@ -179,8 +182,9 @@ if pretraining:
 
 #     torch.save(model.state_dict(), './pretrained-videomae.pt')
     model.module.save_pretrained(pretrain_path)
-
+        
 if pretraining:
+    print("Loading pretrained model from " + pretrain_path)
     model = VideoMAEForVideoClassification.from_pretrained(pretrain_path,config=config)
 else:
     model = VideoMAEForVideoClassification(config=config)
