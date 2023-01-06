@@ -30,7 +30,7 @@ import numpy as np
 import torch
 from torchvision.transforms import Compose, Lambda, Normalize, RandomHorizontalFlip, RandomResizedCrop, ToTensor
 
-os.environ["CUDA_VISIBLE_DEVICES"]="2,3"
+os.environ["CUDA_VISIBLE_DEVICES"]="0,1,2,3"
 args = gen_args("VideoMae4layerPretrained_frame_sensor")
 
 print(args)
@@ -62,16 +62,17 @@ config.hidden_size = args.hidden_size
 config.num_attention_heads = args.encoder_att_heads
 config.comparisons = args.comparisons
 config.beta = args.beta
+config.use_mean_pooling = False
 
-pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed10-v7-2card' % 
-                    (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
+pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed10-4card-sigmoid-cls-v2' % 
+                    (config.num_hidden_layers, str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_pretrain, args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data), args.comparisons,
                               str(args.beta)))
 if args.pretrain:
-    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed10-v7-2card' % 
-                         (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
+    finetune_path = ('./saved_models/%ddepth-%slr-%spretrainLR-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed10-4card-sigmoid-cls-v2' % 
+                         (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data),args.comparisons,
@@ -81,7 +82,7 @@ else:
                      (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                           args.hidden_size, args.encoder_att_heads,
                           args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
-                          str(f'{args.mask_ratio:.2f}').split('.')[1]))
+                          str(args.mask_ratio)))
 print(pretrain_path)
 print(finetune_path)
     
@@ -104,84 +105,116 @@ extra_data = args.extra_data
 pretraining = args.pretrain
 
 
-if pretraining: #and (os.path.exists(pretrain_path)==0):
-    model = VideoMAEForPreTraining(config)
+if pretraining:
+    if os.path.exists(pretrain_path) == False:
+        print("Begin pretraining")
+        model = VideoMAEForPreTraining(config)
 
-    if multiple_gpu:
-        model = nn.DataParallel(model, device_ids=[0,1])
+        if multiple_gpu:
+            model = nn.DataParallel(model, device_ids=[0,1,2,3])
 
-    model = model.to(device)
+        model = model.to(device)
+
+        pretrain_opt = optim.Adam(model.parameters(), lr=args.lr_pretrain, weight_decay=args.weight_decay)
+        n_itr = args.n_pretrain
+        mask_ratio = args.mask_ratio
+        for itr in range(0,n_itr):
+            if extra_data:
+                phases = ['train', 'carpet']
+            else:
+                phases = ['train']
+            for phase in phases:
+                running_loss = 0.0
+                count = 0
+                batch_num = 0
+                for data in tqdm(dataloaders[phase]):
+                    inputs, labels = data
+                    if use_gpu:
+                        inputs, labels = inputs.to(device), labels.to(device)
+
+                    num_patches_per_frame = (model.module.config.image_size // model.module.config.patch_size) ** 2
+                    num_cubes = (model.module.config.num_frames // model.module.config.tubelet_size)
+
+                    ## OLD MASKING
+    #                 seq_length = num_cubes * num_patches_per_frame
+    #                 bool_masked_pos = np.ones(seq_length)
+    #                 mask_num = math.ceil(seq_length * mask_ratio)
+    #                 mask = np.random.choice(seq_length, mask_num, replace=False)
+    #                 bool_masked_pos[mask] = 0
     
-    pretrain_opt = optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
-    n_itr = args.n_pretrain
-    mask_ratio = args.mask_ratio
-    for itr in range(0,n_itr):
-        if extra_data:
-            phases = ['train', 'carpet']
-        else:
-            phases = ['train']
-        for phase in phases:
-            running_loss = 0.0
-            count = 0
-            batch_num = 0
-            for data in tqdm(dataloaders[phase]):
-                inputs, labels = data
-                if use_gpu:
-                    inputs, labels = inputs.to(device), labels.to(device)
+#                     if args.mask_type == 'tube':
+#                         frame_masked_pos = np.zeros(num_patches_per_frame)
+#                         mask_num = math.ceil(num_patches_per_frame*mask_ratio)
+#                         mask = np.random.choice(num_patches_per_frame,mask_num,replace=False)
+#                         frame_masked_pos[mask] = 1
+#                         bool_masked_pos = np.tile(frame_masked_pos,num_cubes)
+#                         bool_masked_pos = np.insert(bool_masked_pos,0,0)
 
-                num_patches_per_frame = (model.module.config.image_size // model.module.config.patch_size) ** 2
-                num_cubes = (model.module.config.num_frames // model.module.config.tubelet_size)
-                
-                ## OLD MASKING
-#                 seq_length = num_cubes * num_patches_per_frame
-#                 bool_masked_pos = np.ones(seq_length)
-#                 mask_num = math.ceil(seq_length * mask_ratio)
-#                 mask = np.random.choice(seq_length, mask_num, replace=False)
-#                 bool_masked_pos[mask] = 0
+#                     ## RANDOM MASKING
+#                     if args.mask_type == 'random':
+#                         bool_masked_pos = []
+#                         for i in range(num_cubes):
+#                             frame_masked_pos = np.zeros(num_patches_per_frame)
+#                             mask_num = math.ceil(num_patches_per_frame*mask_ratio)
+#                             mask = np.random.choice(num_patches_per_frame,mask_num,replace=False)
+#                             frame_masked_pos[mask] = 1
+#                             bool_masked_pos.append(frame_masked_pos)
+#                         bool_masked_pos = np.array(bool_masked_pos).flatten()
 
-                ## TUBE MASKING (videomae论文 example d)
-                if args.mask_type == 'tube':
-                    frame_masked_pos = np.zeros(num_patches_per_frame)
-                    mask_num = math.ceil(num_patches_per_frame*mask_ratio)
-                    mask = np.random.choice(num_patches_per_frame,mask_num,replace=False)
-                    frame_masked_pos[mask] = 1
-                    bool_masked_pos = np.tile(frame_masked_pos,num_cubes)
+#                     # Torch and bool cast, extra dimension added for concatenation
+#                     bool_masked_pos = torch.as_tensor(bool_masked_pos).bool().unsqueeze(0)
+#                     bool_masked_pos = torch.cat([bool_masked_pos for _ in range(inputs.shape[0])])
+#                     bool_masked_pos = bool_masked_pos.to(device)
 
-                ## RANDOM MASKING
-                if args.mask_type == 'random':
+                    ## TUBE MASKING (videomae论文 example d)
                     bool_masked_pos = []
-                    for i in range(num_cubes):
-                        frame_masked_pos = np.zeros(num_patches_per_frame)
-                        mask_num = math.ceil(num_patches_per_frame*mask_ratio)
-                        mask = np.random.choice(num_patches_per_frame,mask_num,replace=False)
-                        frame_masked_pos[mask] = 1
-                        bool_masked_pos.append(frame_masked_pos)
-                    bool_masked_pos = np.array(bool_masked_pos).flatten()
+                    for _ in range(inputs.shape[0]):
+                        if args.mask_type == 'tube':
+                            frame_masked_pos = np.zeros(num_patches_per_frame)
+                            mask_num = math.ceil(num_patches_per_frame*mask_ratio)
+                            mask = np.random.choice(num_patches_per_frame,mask_num,replace=False)
+                            frame_masked_pos[mask] = 1
+                            bool_masked_pos_tmp = np.tile(frame_masked_pos,num_cubes)
+                            bool_masked_pos_tmp = np.insert(bool_masked_pos_tmp,0,0)
+                            bool_masked_pos.append(bool_masked_pos_tmp)
 
-                # Torch and bool cast, extra dimension added for concatenation
-                bool_masked_pos = torch.as_tensor(bool_masked_pos).bool().unsqueeze(0)
-                bool_masked_pos = torch.cat([bool_masked_pos for _ in range(inputs.shape[0])])
-                bool_masked_pos = bool_masked_pos.to(device)
+                        ## RANDOM MASKING
+                        if args.mask_type == 'random':
+                            bool_masked_pos_tmp = []
+                            for i in range(num_cubes):
+                                frame_masked_pos = np.zeros(num_patches_per_frame)
+                                mask_num = math.ceil(num_patches_per_frame*mask_ratio)
+                                mask = np.random.choice(num_patches_per_frame,mask_num,replace=False)
+                                frame_masked_pos[mask] = 1
+                                bool_masked_pos_tmp.append(frame_masked_pos)
+                            bool_masked_pos_tmp = np.array(bool_masked_pos_tmp).flatten()
+                            bool_masked_pos_tmp = np.insert(bool_masked_pos_tmp,0,0)
+                            bool_masked_pos.append(bool_masked_pos_tmp)
 
-                outputs = model(inputs, bool_masked_pos=bool_masked_pos)
-                loss = outputs.loss
-                pretrain_opt.zero_grad()
-                loss.mean().backward()
-                pretrain_opt.step()
-                if count > 0 and count % args.log_per_iter == 0:    # print every 3000 inputs 
-                    print('[%d/%d] %s loss: %.4f (%.4f)' % (itr+1, n_itr, phase,
-                        loss.mean().item(), running_loss/batch_num))
-                running_loss += loss.mean().item()
-                count += inputs.shape[0]
-                batch_num += 1
+                    # Torch and bool cast, extra dimension added for concatenation
+                    bool_masked_pos = np.asarray(bool_masked_pos)
+                    bool_masked_pos = torch.as_tensor(bool_masked_pos).bool()
+                    bool_masked_pos = bool_masked_pos.to(device)
 
-            running_loss = running_loss / len(dataloaders[phase])
+                    outputs = model(inputs, bool_masked_pos=bool_masked_pos)
+                    loss = outputs.loss
+                    pretrain_opt.zero_grad()
+                    loss.mean().backward()
+                    pretrain_opt.step()
+                    if count > 0 and count % args.log_per_iter == 0:    # print every 3000 inputs 
+                        print('[%d/%d] %s loss: %.4f (%.4f)' % (itr+1, n_itr, phase,
+                            loss.mean().item(), running_loss/batch_num))
+                    running_loss += loss.mean().item()
+                    count += inputs.shape[0]
+                    batch_num += 1
 
-            print('[%d/%d] %s loss: %.4f (%.4f)' % (itr+1, n_itr, phase,
-                        loss.mean().item(), running_loss))
+                running_loss = running_loss / len(dataloaders[phase])
 
-#     torch.save(model.state_dict(), './pretrained-videomae.pt')
-    model.module.save_pretrained(pretrain_path)
+                print('[%d/%d] %s loss: %.4f (%.4f)' % (itr+1, n_itr, phase,
+                            loss.mean().item(), running_loss))
+        model.module.save_pretrained(pretrain_path)
+    else:
+        print("Pretrained model exists. Skipping redundant pretraining!")
         
 if pretraining:
     print("Loading pretrained model from " + pretrain_path)
@@ -192,7 +225,7 @@ else:
 # model = VideoMAEForVideoClassification.from_pretrained('./finetuned20-videomae',config=config)
 # model.cuda()
 if multiple_gpu:
-    model = nn.DataParallel(model, device_ids=[0,1])
+    model = nn.DataParallel(model, device_ids=[0,1,2,3])
 model = model.to(device)
 
 # if use_gpu:
@@ -388,3 +421,4 @@ y_score_all=label_binarize(pred_rec, classes=[0,1,2,3,4,5,6,7,8])
 
 print('[Test] loss: %.4f | top1 acc: %.4f | top3 acc: %.4f | f1 score %.4f ' % (
             running_loss, top1_cur, top3_cur, f1))
+
