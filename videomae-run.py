@@ -35,7 +35,7 @@ args = gen_args("VideoMae4layerPretrained_frame_sensor")
 
 print(args)
 
-seed = 10
+seed = args.seed
 random.seed(seed)
 torch.manual_seed(seed)
 torch.cuda.manual_seed(seed)
@@ -64,25 +64,25 @@ config.comparisons = args.comparisons
 config.beta = args.beta
 config.use_mean_pooling = False
 
-pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed10-4card-sigmoid-cls-v2' % 
+pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed%d-4card-sigmoid-cls-v2' % 
                     (config.num_hidden_layers, str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_pretrain, args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data), args.comparisons,
-                              str(args.beta)))
+                              str(args.beta), str(args.seed)))
 if args.pretrain:
-    finetune_path = ('./saved_models/%ddepth-%slr-%spretrainLR-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed10-4card-sigmoid-cls-v2' % 
+    finetune_path = ('./saved_models/%ddepth-%slr-%spretrainLR-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed%d-4card-sigmoid-cls-v2-seedreset' % 
                          (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data),args.comparisons,
-                              str(args.beta)))
+                              str(args.beta), str(args.seed)))
 else:
-    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed10-v3' % 
+    finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed%d-v3' % 
                      (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                           args.hidden_size, args.encoder_att_heads,
                           args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
-                          str(args.mask_ratio)))
+                          str(args.mask_ratio), str(args.seed)))
 print(pretrain_path)
 print(finetune_path)
     
@@ -215,6 +215,15 @@ if pretraining:
         model.module.save_pretrained(pretrain_path)
     else:
         print("Pretrained model exists. Skipping redundant pretraining!")
+
+seed = args.seed
+random.seed(seed)
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.cuda.manual_seed_all(seed)
+np.random.seed(seed)
+torch.backends.cudnn.deterministic=True
+torch.backends.cudnn.benchmark=False
         
 if pretraining:
     print("Loading pretrained model from " + pretrain_path)
@@ -421,4 +430,5 @@ y_score_all=label_binarize(pred_rec, classes=[0,1,2,3,4,5,6,7,8])
 
 print('[Test] loss: %.4f | top1 acc: %.4f | top3 acc: %.4f | f1 score %.4f ' % (
             running_loss, top1_cur, top3_cur, f1))
+
 
