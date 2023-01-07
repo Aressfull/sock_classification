@@ -22,6 +22,7 @@ parser.add_argument('-lr','--lr', type=float, default=1e-3)
 parser.add_argument('-l2','--weight_decay', type=float, default=1e-4)
 parser.add_argument('-batch','--batch_size', type=int, default=64)
 parser.add_argument('--num_workers', type=int, default=10)
+parser.add_argument('-seed','--seed', type=int, default=10)
 
 parser.add_argument('--log_per_iter', type=int, default=10000)
 
