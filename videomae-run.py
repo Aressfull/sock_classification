@@ -69,14 +69,14 @@ pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_pretrain, args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data), args.comparisons,
-                              str(args.beta), str(args.seed)))
+                              str(args.beta), args.seed))
 if args.pretrain:
     finetune_path = ('./saved_models/%ddepth-%slr-%spretrainLR-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed%d-4card-sigmoid-cls-v2-seedreset' % 
                          (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data),args.comparisons,
-                              str(args.beta), str(args.seed)))
+                              str(args.beta),args.seed))
 else:
     finetune_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-finetuned-nopretrain-videomae-seed%d-v3' % 
                      (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
