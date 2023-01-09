@@ -14,7 +14,7 @@ class CarpetDataset(Dataset):
     def __init__(self,phase):
         self.phase = phase
 
-        data = torch.load("./carpet_data.pt")
+        data = torch.load("./average_final_tensor.pt")
         label = np.random.randn(data.shape[0],data.shape[1],data.shape[2],data.shape[3])
 
         """
@@ -112,19 +112,27 @@ class ActionDataset(Dataset):
 
             if phase == 'train':
                 print(obj_name, touch_0.shape, touch_1.shape)
+
                 idx = np.random.choice(n_train, args.n_train_per_obj)
+                idx = np.load("./train_split_idx/" + obj_name + ".npy")
+                #np.save("./train_split_idx/" + obj_name + ".npy", idx)
                 touch_0 = touch_0[idx]
                 touch_1 = touch_1[idx]
             elif phase == 'valid':
+                print(obj_name, touch_0.shape, touch_1.shape)
                 touch_0 = touch_0[n_train:n_train + args.n_valid_per_obj]
                 touch_1 = touch_1[n_train:n_train + args.n_valid_per_obj]
             elif phase == 'test':
+                print(obj_name, touch_0.shape, touch_1.shape)
                 touch_0 = touch_0[-args.n_test_per_obj:]
                 touch_1 = touch_1[-args.n_test_per_obj:]
             
             for idx_data in range(touch_0.shape[0]):
 #                 print(touch_0[idx_data].shape)
                 touch = np.swapaxes(np.stack([touch_0[idx_data], touch_1[idx_data]]), 0, 1)
+                #print(touch.shape)
+                #touch = touch.reshape(90,1024)
+                #print(touch.shape)
                 #45*32*32+45*32*32=2*45*32*32->45*2*32*32
 #                 print(np.size(touch,1))
 #                 data.append(touch.reshape(args.input_window_size * 2, touch.shape[2], touch.shape[3])) #n*90*32*32
@@ -149,6 +157,7 @@ class ActionDataset(Dataset):
 
         self.data = torch.FloatTensor(data)
         self.label = torch.LongTensor(label)
+
 
     def __len__(self):
         return self.data.size(0)
