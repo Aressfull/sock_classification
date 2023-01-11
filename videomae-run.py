@@ -64,14 +64,14 @@ config.comparisons = args.comparisons
 config.beta = args.beta
 config.use_mean_pooling = False
 
-pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed%d-4card-sigmoid-cls-v2' % 
+pretrain_path = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed%d-4card-sigmoid-cls-GPU' % 
                     (config.num_hidden_layers, str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_pretrain, args.mask_type,args.tubelet_size, args.patch_size,
                               str(args.mask_ratio), str(args.extra_data), args.comparisons,
                               str(args.beta), args.seed))
 if args.pretrain:
-    finetune_path = ('./saved_models/%ddepth-%slr-%spretrainLR-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed%d-4card-sigmoid-cls-v2-seedreset' % 
+    finetune_path = ('./saved_models/%ddepth-%slr-%spretrainLR-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%dpretrain-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-finetuned-videomae-seed%d-4card-sigmoid-cls-GPU' % 
                          (config.num_hidden_layers, str(args.lr).split('.')[1], str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
                               args.hidden_size, args.encoder_att_heads,
                               args.batch_size, args.n_epoch, args.n_pretrain,args.mask_type,args.tubelet_size, args.patch_size,
@@ -135,12 +135,12 @@ if pretraining:
                     num_patches_per_frame = (model.module.config.image_size // model.module.config.patch_size) ** 2
                     num_cubes = (model.module.config.num_frames // model.module.config.tubelet_size)
 
-                    ## OLD MASKING
-    #                 seq_length = num_cubes * num_patches_per_frame
-    #                 bool_masked_pos = np.ones(seq_length)
-    #                 mask_num = math.ceil(seq_length * mask_ratio)
-    #                 mask = np.random.choice(seq_length, mask_num, replace=False)
-    #                 bool_masked_pos[mask] = 0
+#                     ## OLD MASKING
+#                     seq_length = num_cubes * num_patches_per_frame
+#                     bool_masked_pos = np.ones(seq_length)
+#                     mask_num = math.ceil(seq_length * mask_ratio)
+#                     mask = np.random.choice(seq_length, mask_num, replace=False)
+#                     bool_masked_pos[mask] = 0
     
 #                     if args.mask_type == 'tube':
 #                         frame_masked_pos = np.zeros(num_patches_per_frame)
@@ -160,6 +160,7 @@ if pretraining:
 #                             frame_masked_pos[mask] = 1
 #                             bool_masked_pos.append(frame_masked_pos)
 #                         bool_masked_pos = np.array(bool_masked_pos).flatten()
+#                         bool_masked_pos = np.insert(bool_masked_pos,0,0)
 
 #                     # Torch and bool cast, extra dimension added for concatenation
 #                     bool_masked_pos = torch.as_tensor(bool_masked_pos).bool().unsqueeze(0)
@@ -195,8 +196,28 @@ if pretraining:
                     bool_masked_pos = np.asarray(bool_masked_pos)
                     bool_masked_pos = torch.as_tensor(bool_masked_pos).bool()
                     bool_masked_pos = bool_masked_pos.to(device)
+                    
+                    comparisons = config.comparisons
+                    frame_labels = []
+                    unmasked_pos = (bool_masked_pos[0].shape[0] - bool_masked_pos[0].count_nonzero()).item()
+                    frame_divisor=num_patches_per_frame*(1-mask_ratio)
+                    compare1 = []
+                    compare2 = []
+                    for _ in range(inputs.shape[0]):
+                        to_compare1 = np.random.choice(unmasked_pos,comparisons,replace=False) #从可见选择patch
+                        to_compare2 = np.random.choice(unmasked_pos,comparisons,replace=False)
+                        while ((to_compare2//frame_divisor == to_compare1//frame_divisor).all()): #保证选择的patch不在同一个frame
+                            to_compare2 = np.random.choice(sequence_output.shape[1],comparisons,replace=False)
+                        frame_labels.append(torch.tensor(to_compare1//frame_divisor < to_compare2//frame_divisor))
+                        compare1.append(to_compare1)
+                        compare2.append(to_compare2)
 
-                    outputs = model(inputs, bool_masked_pos=bool_masked_pos)
+                    frame_labels = torch.stack(frame_labels).to(device).float()
+                    compare1 = np.stack(compare1)
+                    compare2 = np.stack(compare2)
+                    combined = (compare1,compare2)
+
+                    outputs = model(inputs, bool_masked_pos=bool_masked_pos,frame_compare=combined,frame_labels=frame_labels)
                     loss = outputs.loss
                     pretrain_opt.zero_grad()
                     loss.mean().backward()
@@ -212,6 +233,14 @@ if pretraining:
 
                 print('[%d/%d] %s loss: %.4f (%.4f)' % (itr+1, n_itr, phase,
                             loss.mean().item(), running_loss))
+                if (itr == 59 or itr == 119 or itr == 179 or itr == 239):
+                    pretrain_path_tmp = ('./saved_models/%ddepth-%slr-%sL1-%sL2-%ddims-%dheads-%dbatch-%depoch-%s-%dtube-%dpatch-%smask-%sadd_carpet-%dcomparisons-%sbeta-pretrained-videomae-seed%d-4card-sigmoid-cls-GPU' % 
+                    (config.num_hidden_layers, str(args.lr_pretrain).split('.')[1], str(args.lambda_L1), str(args.weight_decay).split('.')[1],
+                              args.hidden_size, args.encoder_att_heads,
+                              args.batch_size, itr + 1, args.mask_type,args.tubelet_size, args.patch_size,
+                              str(args.mask_ratio), str(args.extra_data), args.comparisons,
+                              str(args.beta), args.seed))
+                    model.module.save_pretrained(pretrain_path_tmp)
         model.module.save_pretrained(pretrain_path)
     else:
         print("Pretrained model exists. Skipping redundant pretraining!")
